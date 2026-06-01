@@ -1,5 +1,6 @@
 /**
  * @file lora_serial.cpp
+ * @brief Implementation of the LoRa USB serial hardware abstraction layer.
  */
 
 #include "lora_serial.hpp"

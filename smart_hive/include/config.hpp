@@ -1,5 +1,9 @@
 /**
  * @file config.hpp
+ * @brief Global configuration parameters for the IoT Node.
+ * @details Defines compile-time constants for hardware, AI models,
+ * camera pipes, and LoRa telemetry to avoid hardcoded values.
+ * @version 1.0.0
  */
 
 #ifndef CONFIG_HPP
@@ -34,11 +38,6 @@ namespace Config {
         constexpr const char* OUTPUT_DIR = "../images/";
         constexpr const char* FILE_PREFIX = "alert_";
         constexpr const char* FILE_EXTENSION = ".jpg";
-    }
-
-    /** @brief System-monitoring parameters */
-    namespace System {
-        constexpr int TELEMETRY_INTERVAL = 1; 
     }
 
 } // namespace Config

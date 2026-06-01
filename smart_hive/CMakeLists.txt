@@ -40,8 +40,6 @@ add_executable(smart_hive_node
     src/rpicam_pipe.cpp
     src/lora_serial.cpp
     src/object_tracker.cpp
-    src/bme280_linux.cpp
-    src/system_monitor.cpp
 )
 
 # --- 5. Linker Configuration ---

@@ -1,5 +1,10 @@
 /**
  * @file lora_serial.hpp
+ * @brief Hardware Abstraction Layer for LoRa USB serial communication.
+ * @details Provides a POSIX-compliant C++ interface to communicate with 
+ * AT-command based LoRa USB modules (e.g., Waveshare Core1262)
+ * over standard Linux UART interfaces.
+ * @version 1.0.0
  */
 
 #ifndef LORA_SERIAL_HPP

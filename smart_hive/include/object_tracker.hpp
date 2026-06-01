@@ -1,5 +1,11 @@
 /**
  * @file object_tracker.hpp
+ * @brief Object Tracking module based on the SORT (Simple Online and Realtime Tracking) algorithm.
+ * @details Assigns unique persistent IDs to hardware detections and maintains spatial 
+ * memory of their trajectories across frames using Kalman Filters. This module is 
+ * designed to filter temporal noise, handle temporary occlusions, and provide smooth 
+ * bounding box predictions.
+ * @version 1.2.0
  */
 
 #ifndef OBJECT_TRACKER_HPP

@@ -1,5 +1,9 @@
 /**
  * @file object_tracker.cpp
+ * @brief Implementation of the SORT-based Object Tracking system.
+ * @details Handles the lifecycle of individual tracks using OpenCV's Kalman Filter 
+ * and performs data association across consecutive frames using Intersection over Union (IoU).
+ * @version 1.2.0
  */
 
 #include "object_tracker.hpp"

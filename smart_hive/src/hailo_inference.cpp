@@ -1,5 +1,11 @@
 /**
  * @file hailo_inference.cpp
+ * @brief Hailo NPU hardware abstraction layer implementation.
+ * @details Utilizes page-aligned memory allocation (mmap) to ensure zero-copy 
+ * DMA (Direct Memory Access) safety over PCIe. Implements native sequential 
+ * tensor parsing for the Non-Maximum Suppression (NMS) layer with class-specific 
+ * confidence thresholds to optimize detection sensitivity.
+ * @version 1.2.0 (Sequential Parsing & Selective Thresholds)
  */
 
 #include "hailo_inference.hpp"
@@ -137,6 +143,13 @@ std::vector<Detection> HailoInference::get_detections() {
                 continue; 
             }
 
+            /* --------------------------------------------------------------------
+             * CLASS-SPECIFIC CONFIDENCE THRESHOLDS (SMART FILTERING)
+             * --------------------------------------------------------------------
+             * Hornet (Class 1): Strict threshold (50%) to prevent false LoRa alarms.
+             * Bee (Class 0): Lenient threshold (10%) to maximize visibility despite 
+             * smaller size and higher motion blur.
+             * -------------------------------------------------------------------- */
             float current_class_threshold = (c == 1) ? 0.50f : 0.10f; 
 
             // 2. Sequentially parse the bounding box coordinates and score

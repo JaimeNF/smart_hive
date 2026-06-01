@@ -1,5 +1,6 @@
 /**
  * @file rpicam_pipe.cpp
+ * @brief Implementation of the Raspberry Pi camera IPC pipe abstraction.
  */
 
 #include "rpicam_pipe.hpp"

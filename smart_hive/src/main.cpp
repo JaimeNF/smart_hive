@@ -1,11 +1,11 @@
 /**
  * @file main.cpp
- * @brief Edge IoT Node - ULTRA-LEAN PRODUCTION VERSION
- * @details Optimized for maximum long-term stability and minimum power consumption.
- * Features Zero Disk I/O (no images or videos saved) to prevent SD card degradation.
- * Implements a highly optimized Producer-Consumer threading architecture, Selective 
- * Routing for CPU optimization, and state-change driven LoRa telemetry payloads.
- * @version 1.2.0 (Continuous Run + Zero Disk I/O)
+ * @brief Edge IoT Node with Multithreading, Kalman Tracking, and Continuous DVR.
+ * @details Implements a highly optimized Producer-Consumer architecture using POSIX threads.
+ * Includes Selective Routing to apply Kalman filtering exclusively to high-priority targets (hornets),
+ * significantly reducing CPU overhead. Features a continuous VideoWriter (DVR) with motion 
+ * trails for academic/presentation demonstrations.
+ * @version 1.6.2 (Bees Visibility + Diagnostic Logger)
  */
 
 #include <iostream>
@@ -14,6 +14,7 @@
 #include <condition_variable>
 #include <atomic>
 #include <csignal>
+#include <map>    
 #include <vector>
 
 // Third-party Libraries
@@ -25,7 +26,6 @@
 #include "object_tracker.hpp"
 #include "rpicam_pipe.hpp"
 #include "lora_serial.hpp" 
-#include "system_monitor.hpp"
 #include "config.hpp"
 
 /* ========================================================================
@@ -38,19 +38,18 @@ bool new_frame_ready = false;
 std::atomic<bool> system_running{true}; // Atomic flag for thread-safe shutdown
 
 /**
- * @brief Intercepts OS signals (e.g., Ctrl+C) to trigger a graceful system teardown.
+ * @brief Intercepts OS signals (e.g., Ctrl+C) to trigger a graceful shutdown.
  * @param signum The signal code received from the OS.
  */
 void signal_handler(int signum) {
     std::cout << "\n[WARN] Shutdown signal received. Initiating graceful teardown..." << std::endl;
     system_running = false;
-    frame_cv.notify_all(); // Wake up any sleeping threads to exit their loops
+    frame_cv.notify_all(); // Wake up any sleeping threads
 }
 
 /**
- * @brief Producer Thread: Captures frames asynchronously from the camera hardware.
- * @details Decouples the slow I/O operations of the camera from the main AI inference loop,
- * ensuring the NPU is never starved for data.
+ * @brief Producer Thread: Captures frames asynchronously from the camera pipe.
+ * @details Prevents the slow I/O operations of the camera from blocking the AI inference loop.
  * @param cam Pointer to the initialized camera pipe object.
  */
 void camera_worker(RpiCamPipe* cam) {
@@ -59,13 +58,14 @@ void camera_worker(RpiCamPipe* cam) {
 
     while (system_running) {
         if (cam->read(local_frame)) {
-            // Critical Section: Safely transfer the frame to the shared mailbox
+<<<<<<< Updated upstream
+            // Critical Section: Pass the frame to the Consumer
+=======
+>>>>>>> Stashed changes
             std::lock_guard<std::mutex> lock(frame_mutex);
-            
-            // Zero-copy swap: Instantly exchanges memory pointers instead of heavy deep copying
             cv::swap(shared_frame, local_frame); 
             new_frame_ready = true;
-            frame_cv.notify_one(); // Alert the consumer thread that new data is available
+            frame_cv.notify_one(); // Alert the consumer thread
         } else {
             std::cerr << "[WARN] Pipe I/O error or stream ended. Stopping Producer Thread." << std::endl;
             system_running = false;
@@ -80,7 +80,7 @@ void camera_worker(RpiCamPipe* cam) {
  * MAIN ENTRY POINT
  * ======================================================================== */
 int main() {
-    std::cout << "[INFO] Starting Smart Hive IoT Node (ULTRA-LEAN PRODUCTION MODE)..." << std::endl;
+    std::cout << "[INFO] Starting Smart Hive IoT Node (Continuous Test Mode)..." << std::endl;
     
     // Register POSIX signal handlers
     std::signal(SIGINT, signal_handler);
@@ -98,29 +98,27 @@ int main() {
     LoRaSerial lora(Config::LoRa::SERIAL_PORT);
     if (lora.begin()) lora.configure(Config::LoRa::SPREADING_FACTOR, Config::LoRa::TX_POWER_DBM, Config::LoRa::CHANNEL);
 
-    SystemMonitor sys_monitor(lora, Config::System::TELEMETRY_INTERVAL);
-    sys_monitor.start();
-
     RpiCamPipe cam(Config::Camera::WIDTH, Config::Camera::HEIGHT, Config::Camera::FPS);
     if (!cam.start()) return 1;
-
 
     // Launch the Producer thread
     std::thread producer(camera_worker, &cam);
 
     /* ------------------------------------------------------------------------
-     * 2. STATE VARIABLES
+     * 2. CONTINUOUS DVR & MOTION TRAIL VARIABLES
      * ------------------------------------------------------------------------ */
+    cv::VideoWriter continuous_writer;
+    bool is_recording = false;
+    
+    // Maps a unique Tracker ID to its historical centroid positions for motion trails
+    std::map<int, std::vector<cv::Point>> object_trails; 
+
+    std::cout << "[INFO] Consumer Thread active. Awaiting targets..." << std::endl;
     uint32_t frame_count = 0;
     cv::Mat current_frame;
-    
-    // Memory state for real-time telemetry (Prevents LoRa bandwidth spamming)
-    int last_live_count = 0; 
-
-    std::cout << "[INFO] System armed and monitoring. Awaiting threats (Zero Disk I/O Mode)..." << std::endl;
 
     /* ------------------------------------------------------------------------
-     * 3. CONSUMER LOOP (AI INFERENCE & TELEMETRY PIPELINE)
+     * 3. CONSUMER LOOP (AI INFERENCE PIPELINE)
      * ------------------------------------------------------------------------ */
     while (system_running) {
         
@@ -135,44 +133,95 @@ int main() {
             new_frame_ready = false; 
         }
 
-        // Push frame to the Hailo Neural Processing Unit
         if (ai_engine.run_inference(current_frame)) {
-            
-            // Fetch raw, amnesic bounding boxes from the hardware
+            // Fetch raw, amnesic bounding boxes from the Hailo NPU
             std::vector<Detection> raw_targets = ai_engine.get_detections();
             
             // --- 3.1. SELECTIVE ROUTING (CPU OPTIMIZATION) ---
             std::vector<Detection> raw_hornets;
-            
-            // Discard low-priority insects (e.g., bees) to prevent overloading the Kalman matrices
+            std::vector<Detection> raw_bees;
+
+            // Separate targets to prevent overloading the Kalman Filter with low-priority insects
             for (const auto& det : raw_targets) {
                 if (det.class_id == 1) {
-                    raw_hornets.push_back(det); 
+                    raw_hornets.push_back(det); // Fed to the smart tracker
+                } else {
+                    raw_bees.push_back(det);    // Bypasses the tracker (Dumb drawing)
                 }
             }
             
-            // Execute mathematical tracking ONLY on verified hornets
+            // Execute mathematical tracking ONLY on hornets
             std::vector<TrackedObject> tracked_hornets = tracker.update(raw_hornets);
             
-            // --- 3.2. REAL-TIME TELEMETRY (STATE-CHANGE DRIVEN) ---
-            int current_live_count = tracked_hornets.size();
+            // Clone the frame to use it as a drawing canvas
+            cv::Mat alert_frame = current_frame.clone(); 
             
-            // Broadcast a LoRa update ONLY when the number of hornets actively on-screen changes
-            if (current_live_count != last_live_count) {
-                std::string live_payload = "L:" + std::to_string(current_live_count);
-                lora.sendAlert(live_payload); // Transmits "L:1", "L:2", or "L:0"
+            // --- 3.2. INITIALIZE VIDEO WRITER ---
+            if (!is_recording) {
+                std::string vid_name = std::string(Config::Storage::OUTPUT_DIR) + "TEST_CONTINUO.mp4";
+                int codec = cv::VideoWriter::fourcc('m', 'p', '4', 'v');
+                continuous_writer.open(vid_name, codec, Config::Camera::FPS, alert_frame.size());
                 
-                std::cout << "[TELEMETRY] Live Hornets on screen changed to: " << current_live_count << std::endl;
-                last_live_count = current_live_count;
+                if (continuous_writer.isOpened()) {
+                    std::cout << "[REC] Continuous DVR started: " << vid_name << std::endl;
+                    is_recording = true; 
+                } else {
+                    std::cerr << "[ERROR] Failed to initialize the VideoWriter." << std::endl;
+                }
             }
 
-            // --- 3.3. HISTORICAL TELEMETRY (LOGIC ONLY, NO I/O) ---
-            if (!tracked_hornets.empty()) {
+            // --- 3.3. RENDER BEES (Dumb Drawing) ---
+            // Rendered with thickness 2 to survive mp4 compression algorithms
+            for (const auto& bee : raw_bees) {
+                int x1 = static_cast<int>(bee.xmin * alert_frame.cols);
+                int y1 = static_cast<int>(bee.ymin * alert_frame.rows);
+                int x2 = static_cast<int>(bee.xmax * alert_frame.cols);
+                int y2 = static_cast<int>(bee.ymax * alert_frame.rows);
+
+                cv::Scalar color_bee = cv::Scalar(0, 255, 0); // Green
                 
+                cv::rectangle(alert_frame, cv::Point(x1, y1), cv::Point(x2, y2), color_bee, 2);
+            }
+
+            // --- 3.4. RENDER HORNETS (Smart Tracking & LoRa Alerts) ---
+            if (!tracked_hornets.empty()) {
                 for (const auto& obj : tracked_hornets) {
                     
-                    // Trigger logic only for newly confirmed unique objects
+                    int x1 = static_cast<int>(obj.bbox.x * alert_frame.cols);
+                    int y1 = static_cast<int>(obj.bbox.y * alert_frame.rows);
+                    int x2 = static_cast<int>((obj.bbox.x + obj.bbox.width) * alert_frame.cols);
+                    int y2 = static_cast<int>((obj.bbox.y + obj.bbox.height) * alert_frame.rows);
+
+                    cv::Scalar color_hornet = cv::Scalar(0, 0, 255); // Red
+
+                    // Calculate centroid and update historical motion trail
+                    cv::Point center(x1 + (x2 - x1) / 2, y1 + (y2 - y1) / 2);
+                    object_trails[obj.id].push_back(center);
+                    
+                    // Maintain a maximum trail length of 30 frames (~1 second)
+                    if (object_trails[obj.id].size() > 30) {
+                        object_trails[obj.id].erase(object_trails[obj.id].begin());
+                    }
+
+                    // Render the comet-style motion trail
+                    const auto& trail = object_trails[obj.id];
+                    for (size_t p = 1; p < trail.size(); p++) {
+                        int thickness = static_cast<int>(2.0 * p / trail.size()) + 1; // Fades out towards the tail
+                        cv::line(alert_frame, trail[p - 1], trail[p], color_hornet, thickness);
+                    }
+
+                    // Render Bounding Box and Tracker ID
+                    std::string class_name = "Hornet #" + std::to_string(obj.id);
+                    cv::rectangle(alert_frame, cv::Point(x1, y1), cv::Point(x2, y2), color_hornet, 2);
+                    cv::putText(alert_frame, class_name, cv::Point(x1, y1 - 10), cv::FONT_HERSHEY_SIMPLEX, 0.6, color_hornet, 2);
+
+                    // LoRa Anti-Spam Logic: Trigger only on newly registered tracking IDs
                     if (obj.is_new) {
+<<<<<<< Updated upstream
+                        std::cout << "\n[ALERT] NEW Hornet identified (ID: " << obj.id << ")!" << std::endl;
+                        lora.sendAlert("HORNET");
+                        cv::imwrite(std::string(Config::Storage::OUTPUT_DIR) + "FOTO_AVISPA_" + std::to_string(obj.id) + ".jpg", alert_frame);
+=======
                         
                         // 1. Construct the Optimized Historical Payload ("H:<ID>")
                         std::string payload = "H:" + std::to_string(obj.id);
@@ -181,19 +230,39 @@ int main() {
                         
                         // 2. Transmit via LoRa Radio
                         lora.sendAlert(payload);
-                        
-                        // NOTE: Forensic image rendering and saving (cv::imwrite) has been 
-                        // explicitly removed to ensure prolonged SD card lifespan and minimal 
-                        // power draw during 24/7 continuous edge deployment.
+                    
+>>>>>>> Stashed changes
                     }
                 }
             }
 
+            // --- 3.5. GHOST TRAIL CLEANUP ---
+            // Remove motion trails for objects that have been officially dropped by the Tracker
+            for (auto it = object_trails.begin(); it != object_trails.end(); ) {
+                bool is_alive = false;
+                for (const auto& obj : tracked_hornets) {
+                    if (obj.id == it->first) { is_alive = true; break; }
+                }
+                
+                if (!is_alive) {
+                    it = object_trails.erase(it); // Object permanently lost, erase its trail
+                } else {
+                    ++it;
+                }
+            }
+
+            // --- 3.6. SAVE FRAME TO DVR ---
+            if (is_recording) {
+                continuous_writer.write(alert_frame);
+            }
+
             frame_count++;
             
-            // System Heartbeat Logger (Occurs roughly every ~33 seconds at 30 FPS)
-            if (frame_count % 1000 == 0) {
-                std::cout << "[HEARTBEAT] System nominal. Processed frames: " << frame_count << std::endl;
+            // --- DIAGNOSTIC LOGGER ---
+            if (frame_count % Config::Camera::FPS == 0) {
+                std::cout << "[INFO] Frame: " << frame_count 
+                          << " | Bees (Raw): " << raw_bees.size() 
+                          << " | Hornets (Tracked): " << tracked_hornets.size() << std::endl;
             }
         }
     }
@@ -202,16 +271,17 @@ int main() {
      * 4. TEARDOWN AND CLEANUP
      * ------------------------------------------------------------------------ */
     std::cout << "[INFO] Shutting down subsystems..." << std::endl;
-    system_running = false;
-    frame_cv.notify_all(); 
     
-    // Ensure the camera thread merges safely before exit
-    if (producer.joinable()) {
-        producer.join(); 
+    // Safely close the video file to prevent file corruption
+    if (is_recording && continuous_writer.isOpened()) {
+        continuous_writer.release();
+        std::cout << "[REC] Continuous DVR video TEST_CONTINUO.mp4 saved successfully." << std::endl;
     }
     
+    system_running = false;
+    frame_cv.notify_all(); 
+    if (producer.joinable()) producer.join(); 
     cam.release();
-    std::cout << "[INFO] Smart Hive IoT Node safely terminated." << std::endl;
     
     return 0;
 }

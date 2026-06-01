@@ -1,23 +1,5 @@
-/**
- * @file receptor.ino
- * @brief LoRa Receiver & Edge Web Dashboard (WiFi Station Mode)
- * @details Connects the ESP32 to an existing Wi-Fi network and hosts an asynchronous 
- * web server. Listens for incoming LoRa telemetry payloads. Includes a 10-minute Watchdog 
- * to monitor link health and a remote reset endpoint for the hornet counter.
- * @version 3.1.0 (Watchdog Timer & Reset Feature)
- */
-
 #include <RadioLib.h>
-#include <WiFi.h>
-#include <WebServer.h>
 
-// UI and Security Headers
-#include "dashboard.h" 
-#include "secrets.h" 
-
-/* ========================================================================
- * 1. LORA HARDWARE CONFIGURATION (SX1262)
- * ======================================================================== */
 #define NSS_PIN   5
 #define DIO1_PIN  2
 #define RESET_PIN 25
@@ -25,163 +7,81 @@
 
 SX1262 radio = new Module(NSS_PIN, DIO1_PIN, RESET_PIN, BUSY_PIN);
 
-/* ========================================================================
- * 2. TELEMETRY STATE & WEB SERVER
- * ======================================================================== */
-// --- Threat Telemetry ---
-int live_hornets = 0;        
-int total_hornets_today = 0; 
-
-// --- Environment Telemetry ---
-float hive_temp = 0.0;
-float hive_hum = 0.0;
-
-// --- Node Health Telemetry ---
-float cpu_temp = 0.0;
-float cpu_load = 0.0;
-float lora_rssi = 0.0; 
-float lora_snr = 0.0;  
-
-// --- Connection Watchdog ---
-bool has_received_ever = false;
-unsigned long last_lora_packet_time = 0;
-const unsigned long LORA_TIMEOUT_MS = 10 * 60 * 1000UL; // 10 Minutos en Milisegundos
-
-WebServer server(80); 
-
-/* ========================================================================
- * 3. SYSTEM INITIALIZATION
- * ======================================================================== */
 void setup() {
   Serial.begin(115200);
   while (!Serial);
 
   Serial.println("\n=========================================");
-  Serial.println("  LORA RECEIVER + WEB DASHBOARD (STA MODE)");
+  Serial.println("  CAZADOR CONTINUO (0x12 CONFIRMADO)");
   Serial.println("=========================================");
 
-  Serial.print("[WIFI] Connecting to network: ");
-  Serial.println(SECRET_WIFI_SSID);
-  
-  WiFi.mode(WIFI_STA); 
-  WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS); 
-
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-
-  Serial.println("\n[WIFI] Connection successful!");
-  Serial.print("[WIFI] Dashboard IP: http://");
-  Serial.println(WiFi.localIP());
-
-  // --- WEB SERVER ROUTES ---
-  server.on("/", HTTP_GET, []() {
-    server.send(200, "text/html", index_html);
-  });
-
-  // REST API endpoint returning full system state as JSON
-  server.on("/api/data", HTTP_GET, []() {
-    // Calculamos si la conexión está viva (ha llegado un paquete en los últimos 10 min)
-    bool is_connected = has_received_ever && (millis() - last_lora_packet_time <= LORA_TIMEOUT_MS);
-
-    String json = "{";
-    json += "\"live\":" + String(live_hornets) + ",";
-    json += "\"total\":" + String(total_hornets_today) + ",";
-    json += "\"hive_temp\":" + String(hive_temp, 1) + ",";
-    json += "\"hive_hum\":" + String(hive_hum, 1) + ",";
-    json += "\"cpu_temp\":" + String(cpu_temp, 1) + ",";
-    json += "\"cpu_load\":" + String(cpu_load, 1) + ",";
-    json += "\"lora_rssi\":" + String(lora_rssi, 1) + ",";
-    json += "\"lora_snr\":" + String(lora_snr, 1) + ",";
-    json += "\"connected\":" + String(is_connected ? "true" : "false");
-    json += "}";
-    server.send(200, "application/json", json);
-  });
-
-  // NUEVO: Ruta para resetear el contador total
-  server.on("/api/reset", HTTP_POST, []() {
-    total_hornets_today = 0;
-    Serial.println("[WEB] Request received: Reset Total Counter.");
-    server.send(200, "application/json", "{\"status\":\"ok\"}");
-  });
-
-  server.begin();
-  Serial.println("[WEB] Server initialized and listening.");
-
-  // --- LORA CONFIGURATION ---
+  // Volvemos al 0x12 victorioso
   int state = radio.begin(868.0, 125.0, 7, 5, 0x12, 10, 8);
+
   if (state == RADIOLIB_ERR_NONE) {
-    Serial.println("[LORA] SX1262 transceiver successfully initialized.");
+    Serial.println("[OK] Chip SX1262 configurado a bajo nivel.");
   } else {
-    Serial.print("[ERROR] LoRa initialization failed: "); Serial.println(state);
-    while (true); 
+    Serial.print("[ERROR] Fallo al iniciar: "); Serial.println(state);
+    while (true);
   }
 
+  // ACTIVAMOS EL CRC: Queremos que la estructura sea idéntica a la industrial
   radio.setCRC(true);
+
+  // INICIO CONTINUO: No hay tiempo límite. Escucha infinitamente.
   radio.startReceive();
-  Serial.println("[LORA] Armed and listening for edge node telemetry...");
+  Serial.println("Escuchando... Esperando impulso eléctrico en el pin DIO1.");
+  Serial.println("-----------------------------------------");
 }
 
-/* ========================================================================
- * 4. MAIN EXECUTION LOOP
- * ======================================================================== */
 void loop() {
-  server.handleClient();
-
+  // Leemos el pin físico DIO1. Si se pone en HIGH, el chip ha terminado de descargar todo.
   if (digitalRead(DIO1_PIN) == HIGH) {
+    Serial.println("\n[>>] ¡PIN DIO1 ACTIVADO! El chip ha descargado el paquete.");
+    
     byte byteArr[256];
+    // Extraemos la información de la memoria del chip
     int state = radio.readData(byteArr, 256);
 
     if (state == RADIOLIB_ERR_NONE || state == RADIOLIB_ERR_CRC_MISMATCH) {
-      
-      // ¡Recibimos un paquete! Actualizamos el "Latido" (Heartbeat) del Watchdog
-      has_received_ever = true;
-      last_lora_packet_time = millis();
-
       int len = radio.getPacketLength();
-      lora_rssi = radio.getRSSI();
-      lora_snr = radio.getSNR();
+      Serial.print("[BINGO] Paquete leído con éxito. Longitud: "); Serial.print(len); Serial.println(" bytes.");
       
-      // Payload Sanitization
-      String payload = "";
+      Serial.print(" -> HEX: ");
       for(int i = 0; i < len; i++) {
-        if (byteArr[i] >= 32 && byteArr[i] <= 126) {
-          payload += (char)byteArr[i];
-        }
+        if(byteArr[i] < 16) Serial.print("0");
+        Serial.print(byteArr[i], HEX); Serial.print(" ");
       }
-      
-      Serial.print("\n[LORA] Payload: [");
-      Serial.print(payload);
-      Serial.println("]");
+      Serial.println();
 
-      // --- DASHBOARD TELEMETRY PARSER ---
+      Serial.print(" -> TXT: ");
+      for(int i = 0; i < len; i++) {
+        Serial.print((byteArr[i] >= 32 && byteArr[i] <= 126) ? (char)byteArr[i] : '.');
+      }
+      Serial.println("\n-----------------------------------------");
       
-      // A. Real-Time Threats
-      int indexL = payload.indexOf("L:");
-      if (indexL != -1) {
-        live_hornets = payload.substring(indexL + 2).toInt();
-      }
-      
-      // B. Historical Threats
-      int indexH = payload.indexOf("H:");
-      if (indexH != -1) {
-        int incoming_id = payload.substring(indexH + 2).toInt();
-        if (incoming_id > total_hornets_today) total_hornets_today = incoming_id;
-      }
-
-      // C. Environmental & System Health
-      int indexE = payload.indexOf("E:");
-      if (indexE != -1) {
-        String e_data = payload.substring(indexE + 2);
-        sscanf(e_data.c_str(), "%f,%f,%f,%f", &hive_temp, &hive_hum, &cpu_temp, &cpu_load);
-        Serial.printf("   -> ENV/HEALTH updated: Hive[%.1fC, %.1f%%] CPU[%.1fC, %.1f]\n", hive_temp, hive_hum, cpu_temp, cpu_load);
-      }
-
     } else {
-      Serial.print("[LORA ERROR] Packet decoding failed: "); Serial.println(state);
+      Serial.print("[ERROR] La antena avisó, pero hubo un fallo al decodificar. Código: ");
+      Serial.println(state);
     }
 
+    // Volvemos a armar la recepción continua para el siguiente mensaje
     radio.startReceive();
   }
+
+  // Monitor pasivo: Si detecta una onda fuerte, te avisa en tiempo real
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 100) { // Comprueba rápido
+    float rssi = radio.getRSSI();
+    // Si la potencia sube de -60 dBm, significa que el Waveshare está disparando
+    if (rssi > -60.0) { 
+       Serial.print("[Ráfaga detectada en el aire: ");
+       Serial.print(rssi);
+       Serial.println(" dBm]");
+       delay(500); // Pequeña pausa para no saturar tu pantalla
+    }
+    lastPrint = millis();
+  }
+  
+  delay(10);
 }

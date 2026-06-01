@@ -2,7 +2,7 @@
 smart_hive/build/
 *.o
 smart_hive/smart_hive_node
-loRa_receiver/secrets.h
+system_monitor/secrets_mqtt.py
 
 # Modelos IA y evidencias
 *.hef

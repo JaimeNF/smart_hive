@@ -1,5 +1,10 @@
 /**
  * @file rpicam_pipe.hpp
+ * @brief Hardware Abstraction Layer for Raspberry Pi camera stream acquisition.
+ * @details Manages inter-process communication (IPC) via standard output pipes 
+ * to interface with native Raspberry Pi camera utilities (e.g., rpicam-vid). 
+ * Captures raw video streams and decodes them into OpenCV matrices.
+ * @version 1.0.0
  */
 
 #pragma once
