@@ -1,0 +1,13 @@
+# Compilacion y binarios
+smart_hive/build/
+*.o
+smart_hive/smart_hive_node
+loRa_receiver/secrets.h
+
+# Modelos IA y evidencias
+*.hef
+images/*.jpg
+images/*.png
+
+# Archivos del SO
+.DS_Store
