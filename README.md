@@ -27,13 +27,13 @@ El sistema integra visión artificial acelerada por \textit{hardware} (NPU Hailo
 
 La arquitectura del \textit{software} está dividida en cuatro bloques principales que abarcan todo el ciclo de vida del proyecto: desde el entrenamiento del modelo de IA hasta su despliegue físico en la colmena y la recepción de telemetría.
 
-
+```
 SMART_HIVE/
 ├── hailo_optimizer/    # Pipeline de cuantización, optimización y profiling (HDC)
 ├── LoRa_Receiver/      # Gateway ESP32: Recepción de telemetría y Dashboard web
 ├── smart_hive/         # Core de Producción: Aplicación C++ para la Raspberry Pi 5
 └── yolo_training/      # Entorno de Machine Learning: Preparación y entrenamiento YOLO
-
+```
 
 ## Descripción Detallada de los Módulos
 
