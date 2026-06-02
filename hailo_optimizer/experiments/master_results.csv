@@ -1,0 +1,6 @@
+Experiment_ID,Date,Model,Dataset_Images,Precision,Recall,F1_Score,Mean_Latency_ms,FPS_Inference,Mean_Temp_C,Max_Temp_C,Mean_CPU_%,Mean_RAM_%,TP,FP,FN,Conf_Th,IoU_Th,Artifacts_Folder,Mean_Power_W,Max_Power_W,Total_Energy_kWh,Duration_Secs
+
+yolov11n_balanced,2026-05-20 12:16:14,yolov11n_balanced.hef,2031,0.9205,0.8137,0.8638,9.16,109.15,30.59,32.3,14.5,8.74,3276,283,750,0.42,0.45,/home/jaime/Desktop/results/yolov11n_balanced,7.13,7.6,7.794e-05,39.35
+yolov11s_balanced,2026-05-20 12:22:33,yolov11s_balanced.hef,2031,0.889,0.8266,0.8567,19.93,50.18,40.91,42.8,10.01,9.12,3332,416,699,0.42,0.45,/home/jaime/Desktop/results/yolov11s_balanced,6.76,7.3,0.00011853,63.14
+yolov11n_accuracy,2026-05-27 14:40:08,yolov11n_accuracy.hef,2031,0.9341,0.8207,0.8737,11.12,89.89,37.18,38.9,14.16,9.2,3301,233,721,0.42,0.45,/home/jaime/Desktop/results/yolov11n_accuracy,6.77,7.5,8.828e-05,46.97
+yolov11n_max_FPS,2026-05-30 10:20:55,yolov11n_max_FPS.hef,2031,0.947,0.7826,0.857,8.69,115.1,51.46,53.2,18.1,8.52,3147,176,874,0.42,0.45,/home/jaime/Desktop/results/yolov11n_max_FPS,7.32,7.9,6.311e-05,31.02
